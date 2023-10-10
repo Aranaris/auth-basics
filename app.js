@@ -3,6 +3,7 @@ const path = require("path");
 const session = require("express-session");
 const passport = require("passport");
 const LocalStrategy = require("passport-local").Strategy;
+const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 const mongoose = require("mongoose");
@@ -32,11 +33,12 @@ app.use(session({ secret: 'cats', resave: false, saveUninitialized: true }));
 passport.use(
     new LocalStrategy(async (username, password, done) => {
         try {
-            const user = await User.findOne({ username: username })
+            const user = await User.findOne({ username: username });
+            const match = await bcrypt.compare(password, user.password);
             if (!user) {
                 return done(null, false, { message: 'incorrect username' });
             };
-            if (user.password !== password ) {
+            if (!match) {
                 return done(null, false, { message: 'incorrect password' });
             };
             return done(null, user);
@@ -58,6 +60,11 @@ passport.deserializeUser(async (id, done) => {
         done(err);
     };
 });
+
+app.use((req, res, next) => {
+    res.locals.currentUser = req.user;
+    next();
+  });
 
 app.use(passport.initialize());
 app.use(passport.session());
@@ -84,14 +91,19 @@ app.get('/sign-up-form', (req, res) => res.render('sign-up-form'));
 
 app.post('/sign-up-form', async (req, res, next) => {
     try {
-        const user = new User({
-            username: req.body.username,
-            password: req.body.password,
+        bcrypt.hash(req.body.password, 10, async (err, hashedPassword) => {
+            if (err) {
+                console.log(err);
+            } else {
+                const user = new User({
+                    username: req.body.username,
+                    password: hashedPassword,
+                });
+                const result = await user.save();
+
+                res.redirect('/');
+            }
         })
-
-        const result = await user.save();
-
-        res.redirect('/');
     } catch(err) {
         return next(err);
     }
